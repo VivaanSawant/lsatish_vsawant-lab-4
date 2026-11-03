@@ -1,9 +1,7 @@
 /* boot.s
- * Assembler startup file for the STM32F103
+ * Assembler startup file for the STM32
  * Ford Seidel  2019-01-31
  * Ronit Banerjee
- *
- * Adapted from Tom Trebisky
  */
 
 # The Cortex M4 is a thumb only processor
@@ -14,11 +12,12 @@
 
 .global ivt
 ivt:
-.word   0                   /* stack top address */
-.word   0                   /* 1 Reset */
+@ TODO: add the stack and the reset handler addr here. DONE!!!!!
+.word   __msp_stack_top           /* stack top address */
+.word   _reset_                   /* 1 Reset */
 .word   _nmi_               /* 2 NMI */
 .word   _hard_fault_        /* 3 Hard Fault */
-.word   spin                /* 4 MM Fault */
+.word   _mm_fault_          /* 4 MM Fault */
 .word   _bus_fault_         /* 5 Bus Fault */
 .word   _usage_fault_       /* 6 Usage Fault */
 .word   spin                /* 7 RESERVED */
@@ -28,8 +27,8 @@ ivt:
 .word   _svc_asm_handler_   /* 11 SV call */
 .word   spin                /* 12 Debug reserved */
 .word   spin                /* 13 RESERVED */
-.word   spin                /* 14 PendSV */
-.word   spin                /* 15 SysTick */
+.word   _pend_sv_           /* 14 PendSV */
+.word   systick_c_handler   /* 15 SysTick */
 .word   spin                /* 16 IRQ0 Window Watchdog Interrupt */
 .word   spin                /* 17 IRQ1 PVD */
 .word   spin                /* 18 IRQ2 TAMPER */
@@ -41,13 +40,13 @@ ivt:
 .word   spin                /* 24 IRQ8 EXTI2   */
 .word   spin                /* 25 IRQ9 EXTI3 */
 .word   spin                /* 26 IRQ10 EXTI4 */
-.word   spin                /* 27 IRQ11 DMA1_Stream0 */
-.word   spin                /* 28 IRQ12 DMA1_Stream1 */
-.word   spin                /* 29 IRQ13 DMA1_Stream2 */
-.word   spin                /* 30 IRQ14 DMA1_Stream3 */
-.word   spin                /* 31 IRQ15 DMA1_Stream4 */
-.word   spin                /* 32 IRQ16 DMA1_Stream5 */
-.word   spin                /* 33 IRQ17 DMA1_Stream6 */
+.word   spin                /* 27 IRQ11 DMA1_Channel1   */
+.word   spin                /* 28 IRQ12 DMA1_Channel2   */
+.word   spin                /* 29 IRQ13 DMA1_Channel3 */
+.word   spin                /* 30 IRQ14 DMA1_Channel4 */
+.word   spin                /* 31 IRQ15 DMA1_Channel5   */
+.word   spin                /* 32 IRQ16 DMA1_Channel6   */
+.word   spin                /* 33 IRQ17 DMA1_Channel7 */
 .word   spin                /* 34 IRQ18 ADC1_2 */
 .word   spin                /* 35 IRQ19 CAN1_TX   */
 .word   spin                /* 36 IRQ20 CAN1_TX0   */
@@ -58,9 +57,9 @@ ivt:
 .word   spin                /* 41 IRQ25 TIM1_UP */
 .word   spin                /* 42 IRQ26 TIM1_TRG_COM */
 .word   spin                /* 43 IRQ27 TIM1_CC   */
-.word   spin                /* 44 IRQ28 TIM2   */
+.word   servo_timer_handler /* 44 IRQ28 TIM2   */
 .word   spin                /* 45 IRQ29 TIM3 */
-.word   spin                /* 46 IRQ30 TIM5 */
+.word   spin                /* 46 IRQ30 TIM4 */
 .word   spin                /* 47 IRQ31 I2C1_EV   */
 .word   spin                /* 48 IRQ32 I2C1_ER   */
 .word   spin                /* 49 IRQ33 I2C2_EV */
@@ -68,7 +67,7 @@ ivt:
 .word   spin                /* 51 IRQ35 SPI1   */
 .word   spin                /* 52 IRQ36 SPI2   */
 .word   spin                /* 53 IRQ37 USART1 */
-.word   spin                /* 54 IRQ38 USART2 */
+.word   uart_irq_handler    /* 54 IRQ38 USART2 */
 .word   spin                /* 55 IRQ39 USART3   */
 .word   spin                /* 56 IRQ40 EXTI15_10   */
 .word   spin                /* 57 IRQ41 RTCAlarm */
@@ -102,29 +101,75 @@ ivt:
 .section .text
 
 .thumb_func
-spin: bkpt
+spin:
+  bkpt
 
 .thumb_func
-_nmi_ : bkpt
+_nmi_ :
+  bkpt
 
 .thumb_func
-_hard_fault_ : bkpt
+_hard_fault_ :
+  bkpt
 
 .thumb_func
-_bus_fault_ : bkpt
+_mm_fault_:
+  bkpt
 
 .thumb_func
-_usage_fault_ : bkpt
+_bus_fault_ :
+  bkpt
+
+.thumb_func
+_usage_fault_ :
+  bkpt
+
+.thumb_func
+_pend_sv_ :
+  bkpt
+
+.thumb_func
+_spi1_handler:
+  bkpt
 
 .thumb_func
 .global _reset_
 _reset_:
-  bl kernel_main
-  b  sys_exit
+@ Write your boot loader here!
+  ldr r0, = _erodata    @init vals in flash
+  ldr r1, = _k_data     @start of data in SRAM
+  ldr r2, = _data_size   @num of bytes to copy
+  cmp r2, #0          
+  beq data_copy_done
+data_copy_loop:
+  ldr r3, [r0], #4      @load word form flash
+  str r3, [r1], #4      @ storw word
+  subs r2, r2, #4
+  bne data_copy_loop
+data_copy_done:
+  ldr r0, =_k_bss
+  ldr r1, =_bss_size
+  cmp r1, #0
+  beq bss_zero_done
+  movs r2, #0
+bss_zero_loop:
+  str r2, [r0], #4
+  subs r1, r1, #4
+  bne bss_zero_loop
+bss_zero_done:
 
+@ The bkpt instruction puts a breakpoint that fires an exception that
+@ can be caught if a debugger is attached.
+  bl kernel_main
+  bkpt
+
+/*
+ * SVC entry: hand the user's exception frame (on the PSP) to the C handler.
+ * Tail call with b, not bl, so lr still holds EXC_RETURN and the C
+ * function's return performs the exception return back to user mode.
+ */
 .thumb_func
 .global _svc_asm_handler_
 _svc_asm_handler_:
-  mrs r0, psp             // build exception stack frame
-  b svc_c_handler
-  
+  mrs r0, psp          @ arg0 = pointer to stacked r0-r3, r12, lr, pc, xPSR
+  b svc_c_handler      @ C handler returns straight to user via EXC_RETURN

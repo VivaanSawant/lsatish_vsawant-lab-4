@@ -27,7 +27,7 @@ ivt:
 .word   _svc_asm_handler_   /* 11 SV call */
 .word   spin                /* 12 Debug reserved */
 .word   spin                /* 13 RESERVED */
-.word   _pend_sv_           /* 14 PendSV */
+.word   psv_asm_handler     /* 14 PendSV */
 .word   systick_c_handler   /* 15 SysTick */
 .word   spin                /* 16 IRQ0 Window Watchdog Interrupt */
 .word   spin                /* 17 IRQ1 PVD */
@@ -124,9 +124,24 @@ _bus_fault_ :
 _usage_fault_ :
   bkpt
 
+/*
+ * PendSV: context switch. Hardware already stacked r0-r3, r12, lr, pc and
+ * xPSR on the interrupted thread's active stack. We push the rest of its
+ * context (psp, r4-r11, EXC_RETURN) on its kernel stack, let the C handler
+ * pick a thread, then pop that thread's context from the stack it returns.
+ * EXC_RETURN decides whether the thread resumes in user mode or in an SVC.
+ */
 .thumb_func
-_pend_sv_ :
-  bkpt
+.global psv_asm_handler
+psv_asm_handler:
+  mrs r0, psp
+  push {r0, r4-r11, lr}
+  mov r0, sp
+  bl pendsv_c_handler     @ r0 = kernel stack of the thread to resume
+  mov sp, r0
+  pop {r0, r4-r11, lr}
+  msr psp, r0
+  bx lr
 
 .thumb_func
 _spi1_handler:

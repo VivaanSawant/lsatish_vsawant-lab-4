@@ -19,6 +19,11 @@
 void *pendsv_c_handler( void * );
 
 /**
+ * @brief      Scheduler bookkeeping run on every SysTick interrupt.
+ */
+void scheduler_tick( void );
+
+/**
  * @brief      Initialize the thread library
  *
  *             A user program must call this initializer before attempting to

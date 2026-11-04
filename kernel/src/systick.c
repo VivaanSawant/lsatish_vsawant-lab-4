@@ -10,6 +10,7 @@
 
 #include <unistd.h>
 #include <systick.h>
+#include <syscall_thread.h>
 
 /** @brief SysTick control/status register */
 #define STK_CTRL   (*(volatile uint32_t *)0xE000E010)
@@ -43,4 +44,5 @@ uint32_t systick_get_ticks() {
 
 void systick_c_handler() {
     ticks++;
+    scheduler_tick(); // no-op until scheduler_start
 }

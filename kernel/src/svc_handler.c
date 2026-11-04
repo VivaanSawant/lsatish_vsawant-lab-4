@@ -19,12 +19,17 @@
 #include <svc_num.h>
 #include <syscall.h>
 #include <servok.h>
+#include <syscall_thread.h>
 
 /** @brief Word offsets into the hardware-stacked exception frame */
 #define FRAME_R0 0
 #define FRAME_R1 1
 #define FRAME_R2 2
+#define FRAME_R3 3
 #define FRAME_PC 6
+/** @brief Fifth argument: the caller's stack, just past the 8-word frame
+ *         (init_349 disables the alignment padding word) */
+#define FRAME_ARG4 8
 
 /** @brief Size of a 16-bit Thumb svc instruction, in bytes */
 #define SVC_INSTR_SIZE 2
@@ -48,6 +53,7 @@ void svc_c_handler(uint32_t *frame) {
   uint32_t arg0 = frame[FRAME_R0];
   uint32_t arg1 = frame[FRAME_R1];
   uint32_t arg2 = frame[FRAME_R2];
+  uint32_t arg3 = frame[FRAME_R3];
 
   switch (svc_number) {
   case SVC_SBRK:
@@ -67,6 +73,31 @@ void svc_c_handler(uint32_t *frame) {
     break;
   case SVC_SERVO_SET:
     frame[FRAME_R0] = sys_servo_set((uint8_t)arg0, (uint8_t)arg1);
+    break;
+  case SVC_THR_INIT:
+    frame[FRAME_R0] = sys_thread_init(arg0, arg1, (void *)arg2, arg3);
+    break;
+  case SVC_THR_CREATE:
+    frame[FRAME_R0] = sys_thread_create((void *)arg0, arg1, arg2, arg3,
+                                        (void *)frame[FRAME_ARG4]);
+    break;
+  case SVC_THR_KILL:
+    sys_thread_kill();
+    break;
+  case SVC_SCHD_START:
+    frame[FRAME_R0] = sys_scheduler_start(arg0);
+    break;
+  case SVC_WAIT:
+    sys_wait_until_next_period();
+    break;
+  case SVC_TIME:
+    frame[FRAME_R0] = sys_get_time();
+    break;
+  case SVC_PRIORITY:
+    frame[FRAME_R0] = sys_get_priority();
+    break;
+  case SVC_THR_TIME:
+    frame[FRAME_R0] = sys_thread_time();
     break;
   /* no filesystem: newlib probes these, so fail them instead of asserting */
   case SVC_CLOSE:

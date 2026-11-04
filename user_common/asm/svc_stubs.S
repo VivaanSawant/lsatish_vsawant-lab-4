@@ -105,27 +105,35 @@ servo_set:
   svc #SVC_SERVO_SET
   bx lr
 
-/* Lab 4 thread/mutex stubs: still unimplemented */
+/* Thread syscalls. thread_create's fifth argument is already on the
+ * caller's stack, where the kernel reads it above the exception frame. */
 
 .type thread_init, %function
 .global thread_init
 thread_init:
-  bkpt
+  svc #SVC_THR_INIT
+  bx lr
 
 .type thread_create, %function
 .global thread_create
 thread_create:
-  bkpt
+  svc #SVC_THR_CREATE
+  bx lr
 
+/* Also the return address of every thread, so returning kills it */
 .type thread_kill, %function
 .global thread_kill
 thread_kill:
-  bkpt
+  svc #SVC_THR_KILL
+  bx lr
 
 .type scheduler_start, %function
 .global scheduler_start
 scheduler_start:
-  bkpt
+  svc #SVC_SCHD_START
+  bx lr
+
+/* Mutex stubs: not implemented until after the checkpoint */
 
 .type mutex_init, %function
 .global mutex_init
@@ -145,21 +153,30 @@ mutex_unlock:
 .type wait_until_next_period, %function
 .global wait_until_next_period
 wait_until_next_period:
-  bkpt
+  svc #SVC_WAIT
+  bx lr
 
+.thumb_func
 .global get_time
 get_time:
-  bkpt
+  svc #SVC_TIME
+  bx lr
 
+.thumb_func
 .global get_priority
 get_priority:
-  bkpt
+  svc #SVC_PRIORITY
+  bx lr
 
+.thumb_func
 .global thread_time
 thread_time:
-  bkpt
+  svc #SVC_THR_TIME
+  bx lr
 
+/* Idle thread used when thread_init gets a NULL idle function */
 .thumb_func
 .global idle_default
 idle_default:
-  bkpt
+  wfi
+  b idle_default

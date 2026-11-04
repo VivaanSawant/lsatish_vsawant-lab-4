@@ -76,7 +76,7 @@ static int angle_to_ticks(uint8_t angle) {
 
 /**
  * @brief Configures both PWM pins as outputs held low and starts the
- *        10 us PWM timer. Call from kernel_main before entering user mode.
+ *        10 us PWM timer. Called on the first sys_servo_enable.
  */
 void servo_init(void) {
   gpio_init(SERVO_CH1_PORT, SERVO_CH1_PIN, MODE_GP_OUTPUT, OUTPUT_PUSH_PULL,
@@ -119,6 +119,13 @@ void servo_timer_handler(void) {
  * @return 0 on success, -1 for an invalid channel
  */
 int sys_servo_enable(uint8_t channel, uint8_t enabled) {
+  /* started lazily: a 100 kHz interrupt from boot would skew thread timing */
+  static int servo_started = 0;
+  if (!servo_started) {
+    servo_init();
+    servo_started = 1;
+  }
+
   if (channel == SERVO_CH1) {
     ch0_en = enabled;
     if (!enabled) gpio_clr(SERVO_CH1_PORT, SERVO_CH1_PIN);

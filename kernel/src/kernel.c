@@ -16,7 +16,6 @@
 #include <lcd_driver.h>
 #include <printk.h>
 #include <uart.h>
-#include <servok.h>
 #include <unistd.h>
 
 /** @brief UART baud rate required by the handout */
@@ -41,7 +40,6 @@ int kernel_main(void) {
   uart_init(UART_BAUD);
   systick_init(SYSTICK_FREQ); // must precede lcd_driver_init, which uses systick_delay
   lcd_driver_init();
-  servo_init();         // starts the TIM2 PWM tick; both channels start disabled
 
   enter_user_mode();
   return 0;

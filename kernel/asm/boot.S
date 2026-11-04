@@ -161,7 +161,7 @@ bss_zero_done:
 @ The bkpt instruction puts a breakpoint that fires an exception that
 @ can be caught if a debugger is attached.
   bl kernel_main
-  bkpt
+  b  sys_exit
 
 /*
  * SVC entry: hand the user's exception frame (on the PSP) to the C handler.

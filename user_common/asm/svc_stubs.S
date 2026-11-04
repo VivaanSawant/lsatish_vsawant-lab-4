@@ -1,10 +1,10 @@
 /**
- * @file   swi_stubs.S
+ * @file   svc_stubs.S
  *
- * @brief  Stub functions for newlib and 349libc syscalls
- *
- * @date
- * @author
+ * @brief  User-side stubs for newlib and 349libc syscalls. Each stub traps
+ *         into the kernel with the matching svc number and returns; the
+ *         kernel writes the result into the stacked r0, so r0 already holds
+ *         the return value when the stub returns.
  */
 
 .cpu cortex-m4
@@ -14,37 +14,98 @@
 
 #include "../../kernel/include/svc_num.h"
 
+.thumb_func
+.global _start
+_start:
+  bkpt
+
+.thumb_func
 .global _sbrk
 _sbrk:
-  bkpt
+  svc #SVC_SBRK
+  bx lr
 
+.thumb_func
 .global _write
 _write:
-  bkpt
+  svc #SVC_WRITE
+  bx lr
 
+.thumb_func
 .global _close
 _close:
-  bkpt
+  svc #SVC_CLOSE
+  bx lr
 
+.thumb_func
 .global _fstat
 _fstat:
-  bkpt
+  svc #SVC_FSTAT
+  bx lr
 
+.thumb_func
 .global _isatty
 _isatty:
-  bkpt
+  svc #SVC_ISATTY
+  bx lr
 
+.thumb_func
 .global _lseek
 _lseek:
-  bkpt
+  svc #SVC_LSEEK
+  bx lr
 
+.thumb_func
 .global _read
 _read:
-  bkpt
+  svc #SVC_READ
+  bx lr
 
+.thumb_func
 .global _exit
 _exit:
-  bkpt
+  svc #SVC_EXIT
+  bx lr
+
+/* No kernel handler for these yet; fail without trapping so the SVC
+ * dispatcher's default case is never hit. */
+.thumb_func
+.global _gettimeofday
+_gettimeofday:
+  mvn r0, #0           @ return -1
+  bx lr
+
+.thumb_func
+.global _times
+_times:
+  mvn r0, #0           @ return -1
+  bx lr
+
+.thumb_func
+.global _getpid
+_getpid:
+  movs r0, #1          @ single process, so pid 1
+  bx lr
+
+.thumb_func
+.global _kill
+_kill:
+  mvn r0, #0           @ return -1
+  bx lr
+
+.thumb_func
+.global servo_enable
+servo_enable:
+  svc #SVC_SERVO_ENABLE
+  bx lr
+
+.thumb_func
+.global servo_set
+servo_set:
+  svc #SVC_SERVO_SET
+  bx lr
+
+/* Lab 4 thread/mutex stubs: still unimplemented */
 
 .type thread_init, %function
 .global thread_init
@@ -98,40 +159,7 @@ get_priority:
 thread_time:
   bkpt
 
-.global servo_enable
-servo_enable:
-  bkpt
-
-.global servo_set
-servo_set:
-  bkpt
-
-/* The following stubs are not required to be implemented */
-
-.global _start
-_start:
-  bkpt
-
-.global _kill
-_kill:
-  bkpt
-  
-.global _gettimeofday
-_gettimeofday:
-  bkpt
-
-.global _times
-_times:
-  bkpt
-
-.global _getpid
-_getpid:
-  bkpt
-
 .thumb_func
 .global idle_default
 idle_default:
   bkpt
- 
- 
- 

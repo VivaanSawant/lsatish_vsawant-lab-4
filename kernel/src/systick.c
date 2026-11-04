@@ -22,22 +22,19 @@
 #define STK_CTRL_TICKINT    (1 << 1)  /**< interrupt when it hits 0 */
 #define STK_CTRL_CLKSOURCE  (1 << 2)  /**< use processor clock (16 MHz) */
 
-/** @brief Cycles per ms at 16 MHz */
-#define CYCLES_PER_MS  16000
-
-/** @brief Milliseconds since boot. volatile: changed by the ISR */
+/** @brief Ticks since boot. volatile: changed by the ISR */
 static volatile uint32_t ticks = 0;
 
 
-void systick_init() {
-    STK_LOAD = CYCLES_PER_MS - 1;  // count includes 0
-    STK_VAL = 0; // clear current count so first tick is a full 1 ms
+void systick_init(uint32_t frequency) {
+    STK_LOAD = (BASE_FREQ / frequency) - 1;  // count includes 0
+    STK_VAL = 0; // clear current count so first tick is a full period
     STK_CTRL = STK_CTRL_ENABLE | STK_CTRL_TICKINT | STK_CTRL_CLKSOURCE;
 }
 
-void systick_delay(uint32_t ms) { // renamed to ms because of conflicitng name
+void systick_delay(uint32_t delay_ticks) { // renamed because of conflicting name
     uint32_t start = ticks;
-    while (ticks - start < ms);
+    while (ticks - start < delay_ticks);
 }
 
 uint32_t systick_get_ticks() {

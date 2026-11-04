@@ -22,12 +22,8 @@
 /** @brief UART baud rate required by the handout */
 #define UART_BAUD 115200
 
-/** @brief System Handler Priority Register 2; SVCall priority is bits 31:24 */
-#define SCB_SHPR2 ((volatile uint32_t *)0xE000ED1C)
-#define SVC_PRIO_SHIFT 24
-
-/** @brief Lowest priority (STM32 implements the top 4 bits) */
-#define PRIO_LOWEST 0xF0
+/** @brief SysTick rate: 1 kHz, so one tick is 1 ms */
+#define SYSTICK_FREQ 1000
 
 /** @brief Defined in asm_helpers.S; never returns */
 extern void enter_user_mode(void);
@@ -38,14 +34,12 @@ extern void enter_user_mode(void);
  * @return never returns
  */
 int kernel_main(void) {
+  /* also sets SVC below SysTick/PendSV priority, so syscalls that wait on
+   * those interrupts (UART buffers, systick_delay) can be preempted */
   init_349(); // DO NOT REMOVE THIS LINE
 
-  /* SVC must be lower priority than SysTick and USART2: syscalls wait on
-   * those interrupts (UART buffers, systick_delay), so they need to preempt */
-  *SCB_SHPR2 = (PRIO_LOWEST << SVC_PRIO_SHIFT);
-
   uart_init(UART_BAUD);
-  systick_init();       // must precede lcd_driver_init, which uses systick_delay
+  systick_init(SYSTICK_FREQ); // must precede lcd_driver_init, which uses systick_delay
   lcd_driver_init();
   servo_init();         // starts the TIM2 PWM tick; both channels start disabled
 

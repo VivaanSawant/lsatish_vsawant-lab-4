@@ -11,13 +11,21 @@
 #define _SYSCALL_MUTEX_H_
 
 #include <unistd.h>
+#include <stdint.h>
+
+/** @brief Most mutexes the kernel supports (one bit each in a uint32_t) */
+#define MAX_MUTEXES 32
+
+/** @brief kmutex_t::locked_by value for an unlocked mutex */
+#define MUTEX_NOT_LOCKED 0xFFFFFFFFU
+
 /**
  * @brief      The struct for a mutex.
  */
 typedef struct {
-  volatile uint32_t locked_by;  /** @brief which thread the mutex is locked by, or NOT_LOCKED if unlocked*/
-  volatile uint32_t prio_ceil;  /** @brief priority ceil of the mutex*/ 
-  volatile uint32_t index;      /** @brief index of the mutex in the global mutex array*/
+  volatile uint32_t locked_by;  /**< TCB index of the holder, or MUTEX_NOT_LOCKED */
+  volatile uint32_t prio_ceil;  /**< priority ceiling of the mutex */
+  volatile uint32_t index;      /**< index of the mutex in the global mutex array */
 } kmutex_t;
 
 

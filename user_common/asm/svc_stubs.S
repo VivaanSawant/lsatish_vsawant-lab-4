@@ -133,22 +133,25 @@ scheduler_start:
   svc #SVC_SCHD_START
   bx lr
 
-/* Mutex stubs: not implemented until after the checkpoint */
+/* Mutex syscalls; the handle is an opaque pointer into kernel memory */
 
 .type mutex_init, %function
 .global mutex_init
 mutex_init:
-  bkpt
+  svc #SVC_MUT_INIT
+  bx lr
 
 .type mutex_lock, %function
 .global mutex_lock
 mutex_lock:
-  bkpt
+  svc #SVC_MUT_LOK
+  bx lr
 
 .type mutex_unlock, %function
 .global mutex_unlock
 mutex_unlock:
-  bkpt
+  svc #SVC_MUT_ULK
+  bx lr
 
 .type wait_until_next_period, %function
 .global wait_until_next_period

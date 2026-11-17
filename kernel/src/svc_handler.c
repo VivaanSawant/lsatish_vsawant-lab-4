@@ -20,6 +20,7 @@
 #include <syscall.h>
 #include <servok.h>
 #include <syscall_thread.h>
+#include <syscall_mutex.h>
 
 /** @brief Word offsets into the hardware-stacked exception frame */
 #define FRAME_R0 0
@@ -98,6 +99,15 @@ void svc_c_handler(uint32_t *frame) {
     break;
   case SVC_THR_TIME:
     frame[FRAME_R0] = sys_thread_time();
+    break;
+  case SVC_MUT_INIT:
+    frame[FRAME_R0] = (uint32_t)sys_mutex_init(arg0);
+    break;
+  case SVC_MUT_LOK:
+    sys_mutex_lock((kmutex_t *)arg0);
+    break;
+  case SVC_MUT_ULK:
+    sys_mutex_unlock((kmutex_t *)arg0);
     break;
   /* no filesystem: newlib probes these, so fail them instead of asserting */
   case SVC_CLOSE:

@@ -84,7 +84,7 @@ intrinsic int save_interrupt_state_and_disable(void)
  */
 intrinsic void restore_interrupt_state(int state)
 {
-  __asm volatile("msr PRIMASK, %0" : "=r"(state));
+  __asm volatile("msr PRIMASK, %0" : : "r"(state) : "memory");
 }
 
 /**

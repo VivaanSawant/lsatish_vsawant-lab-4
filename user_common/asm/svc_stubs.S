@@ -133,8 +133,6 @@ scheduler_start:
   svc #SVC_SCHD_START
   bx lr
 
-/* Mutex syscalls */
-
 .type mutex_init, %function
 .global mutex_init
 mutex_init:

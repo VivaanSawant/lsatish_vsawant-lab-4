@@ -1,7 +1,7 @@
 /** @file   syscall_thread.c
  *
- *  @brief  Thread system calls, PendSV context switching, the
- *          rate-monotonic scheduler, and HLP mutexes.
+ *  @brief  Thread system calls, PendSV context switching, and the
+ *          rate-monotonic scheduler.
  *
  *          TCBs are statically allocated and indexed by static priority
  *          (0 to MAX_USER_THREADS - 1), followed by the idle thread and the
@@ -119,8 +119,8 @@ typedef struct {
   uint32_t total_time;    /**< ticks used since the scheduler started */
   uint32_t next_release;  /**< system time when the next period starts */
   uint32_t stack_slot;    /**< which user/kernel stack pair it owns */
-  uint32_t effPrio;       /**< priority including held ceilings */
-  uint32_t held;          /**< bitmask of held mutexes */
+  uint32_t effectivePriority; // inherited priority
+  uint32_t heldMutexes; // held mutex bitmask
 } tcb_t;
 
 /** @brief All thread control blocks */
@@ -145,97 +145,41 @@ static void *idle_function = NULL;
 /** @brief Bitmask of stack slots owned by live threads */
 static uint32_t used_stack_slots = 0;
 
-/** @brief All mutexes; user handles point into this array */
+// mutexes under the highest locker protocol
 static kmutex_t mutexes[MAX_MUTEXES];
-
-/** @brief max_mutexes from thread_init, and how many have been created */
-//@{
 static uint32_t mutexLimit = 0;
 static uint32_t mutexCount = 0;
-//@}
 
-/**
- * @brief Sets a thread's effPrio to the highest of its static priority
- *        and the ceilings of the mutexes it holds.
- *
- * @param idx TCB index of a user thread
- */
-static void update_prio(uint32_t idx) {
-  tcb_t *tcb = &tcbs[idx];
-  uint32_t prio = idx;
+// raises effectivePriority to the highest held ceiling
+static void updateThePriority(uint32_t threadIndex) {
+  tcb_t *tcb = &tcbs[threadIndex];
+  uint32_t priority = threadIndex;
   for (uint32_t i = 0; i < mutexCount; i++) {
-    if ((tcb->held & (1U << i)) && mutexes[i].prio_ceil < prio) {
-      prio = mutexes[i].prio_ceil;
+    if ((tcb->heldMutexes & (1U << i)) && mutexes[i].prio_ceil < priority) {
+      priority = mutexes[i].prio_ceil;
     }
   }
-  tcb->effPrio = prio;
+  tcb->effectivePriority = priority;
 }
 
-/**
- * @brief Re-enables interrupts if they were enabled before
- *        save_interrupt_state_and_disable.
- *
- * @param primask value returned by save_interrupt_state_and_disable
- */
-static void restore_irqs(int primask) {
-  if (!primask) enable_interrupts();
+// undoes save_interrupt_state_and_disable
+static void restoreInterrupts(int savedState) {
+  if (!savedState) enable_interrupts();
 }
 
-/**
- * @brief Warns if a thread is holding mutexes.
- *
- * @param idx    TCB index of a user thread
- * @param reason what the thread did
- */
-static void warn_held(uint32_t idx, const char *reason) {
-  if (tcbs[idx].held) {
-    printk("Mutexes still held, thread %d %s\n", (int)idx, reason);
+// warns if the thread holds mutexes
+static void warnIfHoldingMutexes(uint32_t threadIndex, const char *reason) {
+  if (tcbs[threadIndex].heldMutexes) {
+    printk("Mutexes still held, thread %d %s\n", (int)threadIndex, reason);
   }
 }
 
-/**
- * @brief Checks that a pointer is a mutex returned by sys_mutex_init.
- *
- * @param mutex pointer from the user
- *
- * @return 1 if valid, 0 otherwise
- */
-static int mutex_valid(kmutex_t *mutex) {
-  uintptr_t off = (uintptr_t)mutex - (uintptr_t)mutexes;
+// 1 if mutex came from sys_mutex_init
+static int isValidMutex(kmutex_t *mutex) {
+  uintptr_t offset = (uintptr_t)mutex - (uintptr_t)mutexes;
   return (uintptr_t)mutex >= (uintptr_t)mutexes &&
-         off < mutexCount * sizeof(kmutex_t) &&
-         off % sizeof(kmutex_t) == 0;
-}
-
-/**
- * @brief Finds the runnable user thread with the highest effective
- *        priority. Ties go to the thread holding a mutex.
- *
- * @param[out] anyAlive 1 if any user thread is runnable or waiting
- *
- * @return TCB index to run, or IDLE_IDX if none is runnable
- */
-static uint32_t pick_next(int *anyAlive) {
-  uint32_t next = IDLE_IDX;
-  uint32_t bestPrio = UINT32_MAX;
-  int bestHeld = 0;
-  *anyAlive = 0;
-
-  for (uint32_t i = 0; i < MAX_USER_THREADS; i++) {
-    tcb_t *tcb = &tcbs[i];
-    if (tcb->state == THREAD_UNUSED) continue;
-    *anyAlive = 1;
-    if (tcb->state != THREAD_RUNNABLE) continue;
-
-    int held = tcb->held != 0;
-    if (tcb->effPrio < bestPrio ||
-        (tcb->effPrio == bestPrio && held && !bestHeld)) {
-      next = i;
-      bestPrio = tcb->effPrio;
-      bestHeld = held;
-    }
-  }
-  return next;
+         offset < mutexCount * sizeof(kmutex_t) &&
+         offset % sizeof(kmutex_t) == 0;
 }
 
 /**
@@ -289,8 +233,26 @@ void *pendsv_c_handler(void *context_ptr){
     cur->state = THREAD_RUNNABLE;
   }
 
-  int anyAlive;
-  uint32_t next = pick_next(&anyAlive);
+  uint32_t next = IDLE_IDX;
+  uint32_t bestPriority = UINT32_MAX;
+  int bestHoldsMutex = 0;
+  int anyAlive = 0;
+  for (uint32_t i = 0; i < MAX_USER_THREADS; i++) {
+    tcb_t *tcb = &tcbs[i];
+    if (tcb->state == THREAD_UNUSED) continue;
+    anyAlive = 1;
+    if (tcb->state != THREAD_RUNNABLE) continue;
+
+    // ties go to the mutex holder
+    int holdsMutex = tcb->heldMutexes != 0;
+    if (tcb->effectivePriority < bestPriority ||
+        (tcb->effectivePriority == bestPriority && holdsMutex &&
+         !bestHoldsMutex)) {
+      next = i;
+      bestPriority = tcb->effectivePriority;
+      bestHoldsMutex = holdsMutex;
+    }
+  }
   if (!anyAlive) {
     scheduler_running = 0;
     next = DEFAULT_IDX;
@@ -315,7 +277,7 @@ void scheduler_tick(void) {
     tcb_t *cur = &tcbs[running];
     cur->total_time++;
     if (++cur->period_time >= cur->C && cur->state == THREAD_RUNNABLE) {
-      warn_held(running, "ran out of C");
+      warnIfHoldingMutexes(running, "ran out of C");
       cur->state = THREAD_WAITING;
     }
   }
@@ -399,8 +361,8 @@ int sys_thread_create(
   tcb->total_time = 0;
   tcb->next_release = system_time + T;
   tcb->stack_slot = slot;
-  tcb->effPrio = prio;
-  tcb->held = 0;
+  tcb->effectivePriority = prio;
+  tcb->heldMutexes = 0;
   init_thread_context(tcb, fn, vargp);
   tcb->state = THREAD_RUNNABLE; // last, so SysTick never sees a half-built TCB
   return 0;
@@ -424,7 +386,7 @@ int sys_scheduler_start( uint32_t frequency ){
 }
 
 uint32_t sys_get_priority(){
-  if (running < MAX_USER_THREADS) return tcbs[running].effPrio;
+  if (running < MAX_USER_THREADS) return tcbs[running].effectivePriority;
   return running;
 }
 
@@ -440,8 +402,8 @@ void sys_thread_kill(){
   if (running == DEFAULT_IDX) {
     sys_exit(-1);
   }
-  if (running < MAX_USER_THREADS && tcbs[running].held) {
-    warn_held(running, "exited");
+  if (running < MAX_USER_THREADS && tcbs[running].heldMutexes) {
+    warnIfHoldingMutexes(running, "exited");
     sys_exit(-1);
   }
   if (running < MAX_USER_THREADS) {
@@ -454,7 +416,7 @@ void sys_thread_kill(){
 
 void sys_wait_until_next_period(){
   if (running < MAX_USER_THREADS) {
-    warn_held(running, "waited for next period");
+    warnIfHoldingMutexes(running, "waited for next period");
     tcbs[running].state = THREAD_WAITING;
     pend_pendsv();
   }
@@ -463,7 +425,7 @@ void sys_wait_until_next_period(){
 kmutex_t *sys_mutex_init( uint32_t max_prio ) {
   kmutex_t *mutex = NULL;
 
-  int pm = save_interrupt_state_and_disable();
+  int savedState =save_interrupt_state_and_disable();
   if (mutexCount < mutexLimit) {
     mutex = &mutexes[mutexCount];
     mutex->index = mutexCount;
@@ -471,12 +433,12 @@ kmutex_t *sys_mutex_init( uint32_t max_prio ) {
     mutex->locked_by = NOT_LOCKED;
     mutexCount++;
   }
-  restore_irqs(pm);
+  restoreInterrupts(savedState);
   return mutex;
 }
 
 void sys_mutex_lock( kmutex_t *mutex ) {
-  if (!mutex_valid(mutex)) {
+  if (!isValidMutex(mutex)) {
     printk("Invalid mutex, addr %x\n", (uint32_t)mutex);
     return;
   }
@@ -485,50 +447,50 @@ void sys_mutex_lock( kmutex_t *mutex ) {
     return;
   }
 
-  uint32_t idx = running;
-  uint32_t mask = 1U << mutex->index;
-  if (tcbs[idx].held & mask) {
+  uint32_t threadIndex = running;
+  uint32_t mutexBit = 1U << mutex->index;
+  if (tcbs[threadIndex].heldMutexes & mutexBit) {
     printk("Mutex already held, thread %d mutex %d\n",
-           (int)idx, (int)mutex->index);
+           (int)threadIndex, (int)mutex->index);
     return;
   }
-  if (idx < mutex->prio_ceil) {
+  if (threadIndex < mutex->prio_ceil) {
     printk("Priority above mutex ceiling, killing thread %d mutex %d\n",
-           (int)idx, (int)mutex->index);
+           (int)threadIndex, (int)mutex->index);
     sys_thread_kill();
     return;
   }
 
-  int pm = save_interrupt_state_and_disable();
-  // only happens if the holder ran out of C while holding it
+  int savedState =save_interrupt_state_and_disable();
+  // holder ran out of C
   while (mutex->locked_by != NOT_LOCKED) {
     pend_pendsv();
-    restore_irqs(pm);
-    pm = save_interrupt_state_and_disable();
+    restoreInterrupts(savedState);
+    savedState = save_interrupt_state_and_disable();
   }
-  mutex->locked_by = idx;
-  tcbs[idx].held |= mask;
-  update_prio(idx);
-  restore_irqs(pm);
+  mutex->locked_by = threadIndex;
+  tcbs[threadIndex].heldMutexes |= mutexBit;
+  updateThePriority(threadIndex);
+  restoreInterrupts(savedState);
 }
 
 void sys_mutex_unlock( kmutex_t *mutex ) {
-  if (!mutex_valid(mutex)) {
+  if (!isValidMutex(mutex)) {
     printk("Invalid mutex, addr %x\n", (uint32_t)mutex);
     return;
   }
 
-  uint32_t idx = running;
-  if (mutex->locked_by != idx) {
+  uint32_t threadIndex = running;
+  if (mutex->locked_by != threadIndex) {
     printk("Mutex not held, thread %d mutex %d\n",
-           (int)idx, (int)mutex->index);
+           (int)threadIndex, (int)mutex->index);
     return;
   }
 
-  int pm = save_interrupt_state_and_disable();
+  int savedState =save_interrupt_state_and_disable();
   mutex->locked_by = NOT_LOCKED;
-  tcbs[idx].held &= ~(1U << mutex->index);
-  update_prio(idx);
+  tcbs[threadIndex].heldMutexes &= ~(1U << mutex->index);
+  updateThePriority(threadIndex);
   pend_pendsv();
-  restore_irqs(pm);
+  restoreInterrupts(savedState);
 }

@@ -13,10 +13,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-/** @brief Max mutexes supported */
 #define MAX_MUTEXES 32
-
-/** @brief locked_by value for an unlocked mutex */
 #define NOT_LOCKED 0xFFFFFFFFU
 
 /**

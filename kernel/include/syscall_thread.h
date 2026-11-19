@@ -108,9 +108,8 @@ void sys_wait_until_next_period( void );
 
 /**
 * @brief      Kills current running thread. Aborts program if current thread is
-*             the main thread; a killed idle thread is replaced by the
-*             default idle function. Mutexes the thread still holds are
-*             released with a warning.
+*             main thread or the idle thread or if current thread exited
+*             while holding a mutex.
 *
 * @return     Does not return.
 */
@@ -145,9 +144,8 @@ void sys_wait_until_next_period( void );
 
 /**
 * @brief      Kills current running thread. Aborts program if current thread is
-*             the main thread; a killed idle thread is replaced by the
-*             default idle function. Mutexes the thread still holds are
-*             released with a warning.
+*             main thread or the idle thread or if current thread exited
+*             while holding a mutex.
 *
 * @return     Does not return.
 */

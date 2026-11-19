@@ -133,7 +133,7 @@ scheduler_start:
   svc #SVC_SCHD_START
   bx lr
 
-/* Mutex syscalls; the handle is an opaque pointer into kernel memory */
+/* Mutex syscalls */
 
 .type mutex_init, %function
 .global mutex_init
